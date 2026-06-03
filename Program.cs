@@ -7,15 +7,15 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<RoomService>();
 
-// 2. Fix CORS policy to support Netlify + SignalR credentials
+// 2. Fix CORS policy to support your exact Netlify sub-domain dynamically
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("NetlifyFlutterPolicy", policy =>
     {
-        policy.WithOrigins("https://netlify.app") // Your frontend URL
+        policy.SetIsOriginAllowed(origin => true) // Allows localhost and https://ludobackend.netlify.app automatically
               .AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowCredentials(); // ⚠️ Crucial for SignalR WebSockets
+              .AllowCredentials(); // ⚠️ Crucial for SignalR WebSockets handshake
     });
 });
 
