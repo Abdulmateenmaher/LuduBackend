@@ -95,6 +95,81 @@ public class GameHub(RoomService rooms) : Hub
         await CheckAndAutoPlay(room);
     }
 
+    // ── AutoPlay — called by the client when the 10-second dice timer expires ─
+    // The current human player didn't roll. Server rolls on their behalf and
+    // immediately plays out all available pieces using the same AI logic the
+    // bot uses. After all pieces are played, turn ends (or extra-6 chains).
+
+    public async Task AutoPlay()
+    {
+        var room = rooms.GetRoomByConn(Context.ConnectionId);
+        if (room == null || room.Phase != GamePhase.Play) return;
+        if (room.Players[room.TurnSlot].IsAI) return; // AI doesn't need it
+
+        // Notify other players
+        await Clients.Group(room.RoomId).SendAsync("GameState",
+            new GameStateMsg(room, $"{room.Players[room.TurnSlot].Name} timed out — auto-play"));
+
+        // If still in dice phase, roll on player's behalf
+        if (room.CanRoll && room.DicePool.Count == 0)
+        {
+            var (rolledRoom, extra, prioritizePrison, _) = rooms.RollDice(Context.ConnectionId);
+            if (rolledRoom != null)
+            {
+                await Clients.Group(room.RoomId).SendAsync("GameState", new GameStateMsg(room, null));
+                if (room.Phase == GamePhase.End) return;
+            }
+        }
+
+        // Now consume the dice pool piece-by-piece using the AI's exact evaluator.
+        // Loop because extra rolls (6, double-6, etc.) can chain.
+        const int MAX_MOVE_STEPS = 32;
+        int moveStep = 0;
+        while (room.Phase == GamePhase.Play && room.DicePool.Count > 0
+               && !room.Players[room.TurnSlot].IsAI && moveStep++ < MAX_MOVE_STEPS)
+        {
+            int actId = room.TurnSlot;
+            var actPlayer = room.Players[actId];
+            int ctrlId = actPlayer.Finished && actPlayer.IsHelper ? actPlayer.PartnerId : actId;
+            var pCtrl = room.Players[ctrlId];
+
+            // If this player is finished and not yet a helper, end turn immediately.
+            if (actPlayer.Finished && !actPlayer.IsHelper)
+            {
+                rooms.EndTurn(room);
+                await Clients.Group(room.RoomId).SendAsync("GameState", new GameStateMsg(room, null));
+                break;
+            }
+
+            var pool = room.DicePool.ToList();
+            var allMoves = GameLogic.GetAllValidMoves(pCtrl, pool, room.Players, room.Settings);
+
+            if (allMoves.Count == 0)
+            {
+                // No valid moves — end turn (the "no_move_chance" branch)
+                rooms.EndTurn(room);
+                await Clients.Group(room.RoomId).SendAsync("GameState", new GameStateMsg(room, "No valid moves"));
+                break;
+            }
+
+            // Pick best by AI scoring
+            allMoves.Sort((a, b) =>
+            {
+                int sA = EvaluateAiMove(a, room.Players, ctrlId, false, pool, a.DieIndices, room.Settings);
+                int sB = EvaluateAiMove(b, room.Players, ctrlId, false, pool, b.DieIndices, room.Settings);
+                return sB.CompareTo(sA);
+            });
+            var best = allMoves[0];
+
+            var (_, moveToast) = rooms.ExecuteMove(room, pCtrl, best.Piece, best.Target, best.DieIndices);
+            await Clients.Group(room.RoomId).SendAsync("GameState", new GameStateMsg(room, moveToast));
+            if (room.Phase == GamePhase.End) return;
+
+            // If the move granted an extra roll, keep going automatically
+            if (!room.CanRoll) break;
+        }
+    }
+
     // ── _checkAndAutoPlay — iterative loop to avoid stack overflow ──────────
     // Originally a recursive method. With long AI chains (multiple extra-turn
     // 6's in a row, helper pass-throughs, etc.) the recursion could exceed

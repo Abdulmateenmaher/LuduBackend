@@ -25,4 +25,3 @@ c:\Users\maher\OneDrive\Desktop\Lodu\LuduBackend\obj\Debug\net8.0\LuduBackend.pd
 c:\Users\maher\OneDrive\Desktop\Lodu\LuduBackend\obj\Debug\net8.0\LuduBackend.genruntimeconfig.cache
 c:\Users\maher\OneDrive\Desktop\Lodu\LuduBackend\obj\Debug\net8.0\ref\LuduBackend.dll
 C:\Users\maher\OneDrive\Desktop\Lodu\LuduBackend\obj\Debug\net8.0\LuduBackend.sourcelink.json
-C:\Users\maher\OneDrive\Desktop\Lodu\LuduBackend\obj\Debug\net8.0\staticwebassets.upToDateCheck.txt
