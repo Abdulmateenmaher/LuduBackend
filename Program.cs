@@ -32,3 +32,4 @@ app.MapHub<GameHub>("/gamehub");
 app.MapGet("/", () => "Ludo Backend Running");
 
 app.Run();
+// run
