@@ -14,7 +14,7 @@ FROM ://microsoft.com AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 
-# Render exposes traffic via port 10000 by default, or reads the PORT env var
+# Render exposes traffic via port 10000 by default
 ENV ASPNETCORE_URLS=http://+:10000
 EXPOSE 10000
 
