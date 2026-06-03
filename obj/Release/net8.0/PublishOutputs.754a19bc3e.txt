@@ -1,0 +1,6 @@
+C:\Users\maher\OneDrive\Desktop\Lodu\LuduBackend\obj\Release\net8.0\PubTmp\Out\LuduBackend.exe
+C:\Users\maher\OneDrive\Desktop\Lodu\LuduBackend\obj\Release\net8.0\PubTmp\Out\appsettings.json
+C:\Users\maher\OneDrive\Desktop\Lodu\LuduBackend\obj\Release\net8.0\PubTmp\Out\LuduBackend.dll
+C:\Users\maher\OneDrive\Desktop\Lodu\LuduBackend\obj\Release\net8.0\PubTmp\Out\LuduBackend.deps.json
+C:\Users\maher\OneDrive\Desktop\Lodu\LuduBackend\obj\Release\net8.0\PubTmp\Out\LuduBackend.runtimeconfig.json
+C:\Users\maher\OneDrive\Desktop\Lodu\LuduBackend\obj\Release\net8.0\PubTmp\Out\LuduBackend.pdb
