@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\maher\\OneDrive\\Desktop\\Lodu\\LuduBackend\\LuduBackend.csproj": {}
+    "C:\\Users\\maher\\OneDrive\\Desktop\\Lodu-app\\LuduBackend\\LuduBackend.csproj": {}
   },
   "projects": {
-    "C:\\Users\\maher\\OneDrive\\Desktop\\Lodu\\LuduBackend\\LuduBackend.csproj": {
+    "C:\\Users\\maher\\OneDrive\\Desktop\\Lodu-app\\LuduBackend\\LuduBackend.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\maher\\OneDrive\\Desktop\\Lodu\\LuduBackend\\LuduBackend.csproj",
+        "projectUniqueName": "C:\\Users\\maher\\OneDrive\\Desktop\\Lodu-app\\LuduBackend\\LuduBackend.csproj",
         "projectName": "LuduBackend",
-        "projectPath": "C:\\Users\\maher\\OneDrive\\Desktop\\Lodu\\LuduBackend\\LuduBackend.csproj",
+        "projectPath": "C:\\Users\\maher\\OneDrive\\Desktop\\Lodu-app\\LuduBackend\\LuduBackend.csproj",
         "packagesPath": "C:\\Users\\maher\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\maher\\OneDrive\\Desktop\\Lodu\\LuduBackend\\obj\\",
+        "outputPath": "C:\\Users\\maher\\OneDrive\\Desktop\\Lodu-app\\LuduBackend\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
