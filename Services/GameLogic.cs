@@ -176,8 +176,9 @@ public static class GameLogic
                 if (dest != null) moves.Add(new() { Piece=pc, Target=dest, DieIndices=[i], DieValue=pool[i] });
             }
 
-        // Combined moves — only if no single moves
-        if (moves.Count == 0 && pool.Count >= 2)
+        // 🔥 ENHANCED: Combined moves ALWAYS generated alongside singles
+        var combinedMoves = new List<AiMove>();
+        if (pool.Count >= 2)
             for (int i = 0; i < pool.Count; i++)
                 for (int j = i+1; j < pool.Count; j++)
                 {
@@ -186,9 +187,11 @@ public static class GameLogic
                     {
                         if (pc.State == PieceState.Home || pc.HasKilledThisTurn) continue;
                         var dest = CalculateDestination(player, pc, sum, players, [], -1, settings);
-                        if (dest != null) moves.Add(new() { Piece=pc, Target=dest, DieIndices=[i,j], DieValue=sum });
+                        if (dest != null) combinedMoves.Add(new() { Piece=pc, Target=dest, DieIndices=[i,j], DieValue=sum });
                     }
                 }
-        return moves;
+        // If no single moves, use combined; else include both
+        if (moves.Count == 0) return combinedMoves;
+        else { moves.AddRange(combinedMoves); return moves; }
     }
 }

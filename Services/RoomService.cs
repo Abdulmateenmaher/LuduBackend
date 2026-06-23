@@ -105,7 +105,6 @@ public class RoomService
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    /// Exact port of getControlPlayerId
     int GetCtrlId(GameRoom room)
     {
         var act = room.Players[room.TurnSlot];
@@ -127,7 +126,6 @@ public class RoomService
         return room.SlotConnections.TryGetValue(room.TurnSlot, out var owner) && owner == connId;
     }
 
-    /// Exact port of _autoSelectDie — returns selectedDieIndex for the room
     public int? AutoSelectDie(GameRoom room)
     {
         if (room.DicePool.Count == 0) return null;
@@ -148,8 +146,7 @@ public class RoomService
         return 0;
     }
 
-    // ── RollDice — exact port of GameNotifier.rollDice ────────────────────────
-    // Returns: (room, extra/canRoll, prioritizePrison, toast)
+    // ── RollDice — exact port ──────────────────────────────────────────────
 
     public (GameRoom? room, bool extra, bool prioritizePrison, string? toast) RollDice(string connId)
     {
@@ -163,17 +160,25 @@ public class RoomService
 
         int d1 = _rng.Next(1,7), d2 = _rng.Next(1,7);
 
-        // ── All pieces in home (yard = all home in Flutter) ──
-        // Note: Flutter checks all pieces state == PieceState.home for "allHome"
-        // but variable name is misleading — it actually checks yard state:
-        // "activeP.pieces.every((pc) => pc.state == PieceState.home)" — NO wait,
-        // Flutter local says: allHome = activeP.pieces.every((pc) => pc.state == PieceState.home)
-        // This means all pieces finished (in home cell). This branch handles finished player.
-        // Actually re-reading: `final allHome = activeP.pieces.every((pc) => pc.state == PieceState.home);`
-        // This means ALL 4 pieces are in PieceState.home — player won this turn!
+        // FIX 2: Team game-over check: helper wins if partner finished
+        if (room.Settings.TeamPlay && actPlayer.Finished && actPlayer.IsHelper)
+        {
+            int partnerId = actPlayer.PartnerId;
+            var partner = room.Players[partnerId];
+            if (partner.Finished)
+            {
+                if (CheckGameOver(room)) return (room, false, false, null);
+                EndTurn(room);
+                return (room, false, false, null);
+            }
+        }
+
+        // FIX 1: Dice show on all-home roll
         bool allHome = actPlayer.Pieces.All(pc => pc.State == PieceState.Home);
         if (allHome && !actPlayer.Finished)
         {
+            // Set dice pool to show the values, then check win on next call
+            room.DicePool = [d1, d2];
             bool winningRoll = d1==6||d2==6||(d1==1&&d2==1)||(d1==6&&d2==6);
             if (winningRoll)
             {
@@ -202,7 +207,7 @@ public class RoomService
         }
 
         bool extra = false;
-        var newPool = room.DicePool.ToList(); // starts from existing pool (usually empty)
+        var newPool = room.DicePool.ToList();
         bool isDoubleSix = d1==6&&d2==6, isDoubleOne = d1==1&&d2==1;
         bool isSixOrDoubleOne = d1==6||d2==6||isDoubleOne;
         bool isGlobalFirstSix = !room.MatchFirstSixRolled && isSixOrDoubleOne;
@@ -234,7 +239,7 @@ public class RoomService
         return (room, extra, prioritizePrison, null);
     }
 
-    // ── MovePiece — exact port of GameNotifier.handlePieceClick + _executeMove ──
+    // ── MovePiece — exact port ─────────────────────────────────────────────
 
     public (GameRoom? room, string? toast) MovePiece(string connId, int pieceId, int pieceColor, List<int> dieIndices)
     {
@@ -247,9 +252,6 @@ public class RoomService
         var piece = pCtrl.Pieces.FirstOrDefault(p => p.Id==pieceId && p.Color==pieceColor);
         if (piece==null) return (null,null);
         if (room.DicePool.Count==0) return (null,null);
-
-        // Validate: piece that already killed this turn can't move with selected die (hasKilledThisTurn guard)
-        // (In local Flutter this is checked in handlePieceClick)
 
         MoveDestination? dest;
         if (dieIndices.Count==2 && room.DicePool.Count>=2)
@@ -270,7 +272,7 @@ public class RoomService
         return ExecuteMove(room, pCtrl, piece, dest, dieIndices);
     }
 
-    // ── ExecuteMove — exact port of _executeMove ─────────────────────────────
+    // ── ExecuteMove — exact port ───────────────────────────────────────────
 
     public (GameRoom room, string? toast) ExecuteMove(GameRoom room, Player pCtrl, Piece piece, MoveDestination target, List<int> dieIndicesUsed)
     {
@@ -283,7 +285,6 @@ public class RoomService
         var newPool = room.DicePool.ToList();
         foreach (var idx in dieIndicesUsed.OrderByDescending(x=>x)) newPool.RemoveAt(idx);
 
-        // Hit check — mirrors _executeMove hit logic exactly
         var safeZones = GameLogic.EffectiveSafeZones(room.Settings);
         if (target.TargetState == PieceState.Board && !safeZones.Contains(target.TargetPos))
         {
@@ -309,15 +310,13 @@ public class RoomService
 
         if (CheckGameOver(room)) return (room, null);
 
-        // Exact port of _executeMove end:
-        // if (newPool.isEmpty && !rewardTurn) => _endTurn
         if (newPool.Count==0 && !rewardTurn)
             EndTurn(room);
 
         return (room, null);
     }
 
-    // ── CheckGameOver — exact port of _checkGameOver ─────────────────────────
+    // ── CheckGameOver — exact port ─────────────────────────────────────────
 
     public bool CheckGameOver(GameRoom room)
     {
@@ -329,27 +328,21 @@ public class RoomService
         return over;
     }
 
-    // ── EndTurn — exact port of _endTurn ─────────────────────────────────────
+    // ── EndTurn ─────────────────────────────────────────────────────────────
 
     public void EndTurn(GameRoom room)
     {
-        // Reset hasKilledThisTurn for all pieces
         foreach (var p in room.Players)
             foreach (var pc in p.Pieces)
                 pc.HasKilledThisTurn = false;
 
-        // Skip inactive; in solo skip finished; in team DON'T skip finished (helpers)
-        // Safety: cap iterations to avoid infinite loop if every active player is finished
-        // and we're in solo (no team-mate to take over). In that case, game should be
-        // over — CheckGameOver guards the entry, but be defensive.
         int safety = 0;
         do
         {
             room.TurnSlot = (room.TurnSlot + 1) % 4;
             safety++;
-            if (safety > 8) // 4 players × 2 to guarantee at least one full pass
+            if (safety > 8)
             {
-                // Force game over to break the deadlock
                 room.Phase = GamePhase.End;
                 return;
             }

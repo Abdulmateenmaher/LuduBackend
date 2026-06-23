@@ -331,12 +331,24 @@ public class GameHub(RoomService rooms) : Hub
         // Hit
         bool isHit = targetState == PieceState.Board && !safeZones.Contains(targetPos) &&
                      GameLogic.HasOpponent(targetPos, myId, players);
+        int hitCount = 0;
+        if (isHit)
+        {
+            foreach (var p in players)
+            {
+                if (p.Id == myId || p.PartnerId == myId || !p.IsActive) continue;
+                foreach (var pc in p.Pieces)
+                    if (pc.State == PieceState.Board && pc.Pos == targetPos)
+                        hitCount++;
+            }
+        }
 
         // Block
         int sameColorAtTarget = (targetState == PieceState.Board || targetState == PieceState.HomeStretch)
             ? players[myId].Pieces.Count(p => p != move.Piece && p.State == targetState && p.Pos == targetPos)
             : 0;
         bool formingBlock = sameColorAtTarget == 1;
+        bool joiningBlock = sameColorAtTarget >= 1; // Joining existing block
 
         int sameColorAtCurrent = currentState == PieceState.Board
             ? players[myId].Pieces.Count(p => p != move.Piece && p.State == PieceState.Board && p.Pos == currentPos)
@@ -358,8 +370,26 @@ public class GameHub(RoomService rooms) : Hub
             if (distFromSecondStop > 0 && distFromSecondStop <= 3) isPastSecondStop = true;
         }
 
+        // Check if piece is AT the second stop (the border block position)
+        bool pieceAtSecondStop = currentState == PieceState.Board && currentPos == mySecondStop;
+
+        // Check if moving this piece from second stop will enter home stretch or home
+        bool movingFromSecondStopIntoHome = pieceAtSecondStop && (targetState == PieceState.HomeStretch || targetState == PieceState.Home);
+
         int piecesAtSecondStop = players[myId].Pieces.Count(p => p.State == PieceState.Board && p.Pos == mySecondStop);
         int piecesAtFirstStop  = players[myId].Pieces.Count(p => p.State == PieceState.Board && p.Pos == myFirstStop);
+
+        // Count pieces NOT at second stop and not past it (these are the ones that need attention)
+        int piecesNeedingHelp = players[myId].Pieces.Count(p =>
+        {
+            if (p.State == PieceState.Home || p.State == PieceState.HomeStretch) return false;
+            if (p.State == PieceState.Board)
+            {
+                int distFromStop = (p.Pos - mySecondStop + 52) % 52;
+                if (distFromStop <= 3) return false; // At or past second stop
+            }
+            return true;
+        });
 
         int opponentPiecesOut = 0;
         foreach (var p in players)
@@ -369,6 +399,8 @@ public class GameHub(RoomService rooms) : Hub
         // Danger / chasing scan
         bool currentlyInDanger = false, targetInDanger = false, targetIsChasing = false;
         int minThreatDist = 7;
+        int threatCountNearTarget = 0;
+        int chaseCountFromTarget = 0;
         if (currentState == PieceState.Board && !safeZones.Contains(currentPos) && sameColorAtCurrent == 0)
             foreach (var p in players)
             {
@@ -388,48 +420,110 @@ public class GameHub(RoomService rooms) : Hub
                     if (pc.State == PieceState.Board)
                     {
                         int dt = (targetPos - pc.Pos + 52) % 52;
-                        if (dt > 0 && dt <= 6) targetInDanger = true;
+                        if (dt > 0 && dt <= 6) { targetInDanger = true; threatCountNearTarget++; }
                         int da = (pc.Pos - targetPos + 52) % 52;
-                        if (da > 0 && da <= 6) targetIsChasing = true;
+                        if (da > 0 && da <= 6) { targetIsChasing = true; chaseCountFromTarget++; }
                     }
             }
 
         // ── Scoring — exact mirror of Flutter ──
 
-        if (willPassSecondStop) score -= 100000;
-
-        if (prioritizePrison && currentState == PieceState.Prison && targetState == PieceState.Board)
-            score += 30000;
-
-        int piecesOnBoard = players[myId].Pieces.Count(p => p.State==PieceState.Board || p.State==PieceState.HomeStretch);
-        if (piecesOnBoard <= 2 && prisoners > 0 && move.DieValue == 6)
-            if (currentState==PieceState.Prison && targetState==PieceState.Board)
-                score += 50000;
-
-        if (move.DieValue == 6)
+        // CRITICAL: Apply isPastSecondStop multiplier EARLY before strategic bonuses
+        if (isPastSecondStop && targetState != PieceState.Home)
         {
-            int outDiff = opponentPiecesOut - piecesOut;
-            if (currentState==PieceState.Prison && targetState==PieceState.Board)
-            { score+=30000; score+=10000*(outDiff+1); if(piecesOnBoard<=1) score+=10000; }
-            if (currentState==PieceState.Yard && targetState==PieceState.Board)
-            { score+=20000; score+=8000*(outDiff+1); }
+            int distToHomeEntry = 3 - ((currentPos - mySecondStop + 52) % 52);
+            if (distToHomeEntry <= 2) score = (int)(score * 0.3);
+            else score = (int)(score * 0.5);
         }
 
-        int piecesInYard = players[myId].Pieces.Count(p => p.State==PieceState.Yard);
-        if (prioritizePrison && piecesInYard>=3 && prisoners>0)
-            if (currentState==PieceState.Prison && targetState==PieceState.Board)
-                score += 22000;
+        // Pieces behind second stop that CAN land on it = high priority
+        if (isBehindSecondStop && !willPassSecondStop) {
+            if (distToSecondStop == move.DieValue && targetState == PieceState.Board && !isHit)
+                score += 250000;
+        }
+
+        // HUGE penalty for passing over second stop without landing
+        if (willPassSecondStop) score -= 300000;
+
+        // Forming the 2-piece block on second stop = TOP priority
+        if (formingChokePoint) score += 500000;
+
+        // Landing ON second stop (even without forming block yet)
+        if (isTargetSecondSafe && targetState == PieceState.Board) {
+            if (sameColorAtTarget == 0) score += 200000;
+        }
+
+        // Breaking second stop block = heavily penalized
+        if (breakingChokePoint) score -= 250000;
+        if (isCurrentSecondSafe)
+            score += piecesAtSecondStop >= 2 ? -80000 : -300000;
+
+        // 🔥 ENHANCED: Prevent moving from second stop into home stretch/home
+        if (movingFromSecondStopIntoHome)
+            score -= 200000;
+
+        // 🔥 ENHANCED: Strong penalty for moving ANY piece at second stop
+        if (pieceAtSecondStop && targetState != PieceState.Home)
+        {
+            if (piecesNeedingHelp > 0)
+                score -= 120000 + (piecesNeedingHelp * 10000);
+        }
+
+        // 🔥 ENHANCED: Boost for freeing pieces that need help when we have pieces at second stop
+        if (piecesNeedingHelp > 0)
+        {
+            bool moveHelpsNeedy = !pieceAtSecondStop && !isPastSecondStop;
+            if (moveHelpsNeedy)
+            {
+                score += 50000;
+                if (currentlyInDanger) score += 30000;
+            }
+        }
+
+        // ========== FIX 2: PRISONER RELEASE = CRITICAL WHEN 6 IN POOL ==========
+        bool hasSixInPool = currentPool.Contains(6);
+        
+        // CRITICAL FIX: Prisoner -> Yard (first step: escape prison with 6)
+        if (currentState == PieceState.Prison && targetState == PieceState.Yard)
+        {
+            score += 500000; // ABSOLUTE MAXIMUM - prisoner escape is TOP priority
+            if (hasSixInPool) score += 300000;
+            if (prisoners >= 1) score += 200000;
+            if (prisoners >= 2) score += 200000 * prisoners;
+            int piecesOnBoard = players[myId].Pieces.Count(p => p.State==PieceState.Board || p.State==PieceState.HomeStretch);
+            if (piecesOnBoard <= 2) score += 200000;
+            int outDiff = opponentPiecesOut - piecesOut;
+            if (outDiff > 0) score += 50000 * (outDiff + 1);
+        }
+        
+        // Yard -> Board (second step: release after escape)
+        if (currentState == PieceState.Yard && targetState == PieceState.Board)
+        {
+            if (prisoners > 0)
+            {
+                score -= 100000 * prisoners; // STRONG defer: don't release yard while prisoners exist
+            }
+            else
+            {
+                score += 200000; // High priority for yard release
+                if (hasSixInPool) score += 100000;
+                int piecesOnBoard = players[myId].Pieces.Count(p => p.State==PieceState.Board || p.State==PieceState.HomeStretch);
+                if (piecesOnBoard <= 1) score += 80000;
+                int outDiff = opponentPiecesOut - piecesOut;
+                if (outDiff > 0) score += 30000 * (outDiff + 1);
+            }
+        }
 
         int otherPiecesHome = players[myId].Pieces.Count(p => p!=move.Piece && p.State==PieceState.Home);
         bool isFinishing = targetState==PieceState.Home && otherPiecesHome==3;
         if (isFinishing) { score+=150000; if(remainingDice.Contains(6)) score+=20000; }
 
-        if (formingChokePoint) score += 200000;
         if (formingBlock && isTargetFirstSafe) score += 40000;
 
         if (isHit)
         {
-            score += 60000;
+            // 🔥 FIX 3: Scale score by number of opponents hit (multi-hit is stronger)
+            score += 60000 + (hitCount * 30000);
             if (remainingDice.Count > 0)
             {
                 int remSum = remainingDice.Sum();
@@ -446,11 +540,35 @@ public class GameHub(RoomService rooms) : Hub
             }
         }
 
+        // 🔥 FIX 3: Bonus for forming/joining a block on opponent's colored squares
+        if (joiningBlock && !IsOwnColoredSafe(myId, targetPos) && safeZones.Contains(targetPos))
+        {
+            bool isOpponentColored = false;
+            foreach (var p in players)
+                if (p.Id != myId && p.PartnerId != myId && p.IsActive)
+                    if (IsOwnColoredSafe(p.Id, targetPos)) { isOpponentColored = true; break; }
+            if (isOpponentColored) score += 70000;
+            else score += 25000;
+        }
+
+        // 🔥 FIX 3: Strong penalty for moving to a position where MULTIPLE opponents threaten
+        if (threatCountNearTarget >= 2 && !formingBlock && !isHit)
+            score -= 30000 * threatCountNearTarget;
+        else if (threatCountNearTarget >= 1 && !formingBlock && !isHit)
+            score -= 8000;
+
+        // 🔥 FIX 3: Bonus for tailing multiple opponents (chase potential)
+        if (chaseCountFromTarget > 1)
+            score += 30000;
+
         if (targetState == PieceState.Home)
         {
             score += 12000;
             int notHome = players[myId].Pieces.Count(p => p.State!=PieceState.Home);
             if (notHome > 1) score -= 5000;
+            // 🔥 FIX 4: Gently prioritize/preserve home entry
+            if (notHome <= 2) score += 15000;
+            else if (notHome >= 3 && piecesNeedingHelp > 1) score -= 40000;
         }
 
         if (formingBlock && IsOwnColoredSafe(myId,targetPos) && !isTargetFirstSafe && !isTargetSecondSafe) score+=5000;
@@ -480,15 +598,11 @@ public class GameHub(RoomService rooms) : Hub
         { score+=2000; if(piecesOut>=3) score-=1000; if(prioritizePrison&&prisoners>0) score-=10000; }
         if (targetState==PieceState.HomeStretch) score+=1500;
 
-        if (breakingChokePoint) score-=100000;
-        if (isCurrentSecondSafe) score += piecesAtSecondStop>=2 ? -30000 : -150000;
         if (isCurrentFirstSafe)  score += piecesAtFirstStop>=2  ? -5000  : -20000;
-        if (targetInDanger && !isHit && !formingBlock) score-=4000;
+        if (targetInDanger && !isHit && !formingBlock) score-=4000 * (threatCountNearTarget + 1);
         if (leavingVulnerable) score-=5000;
         if (currentState==PieceState.Board && IsOwnColoredSafe(myId,currentPos) && sameColorAtCurrent>0
             && !isHit && !breakingChokePoint && !isCurrentFirstSafe && !isCurrentSecondSafe) score-=2000;
-
-        if (isPastSecondStop && targetState!=PieceState.Home) score=(int)(score*0.5);
 
         return score;
     }
