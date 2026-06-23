@@ -168,6 +168,11 @@ public class GameHub(RoomService rooms) : Hub
             // If the move granted an extra roll, keep going automatically
             if (!room.CanRoll) break;
         }
+
+        // CRITICAL FIX: After auto-play ends, the turn may have advanced to a bot
+        // via EndTurn. If so, trigger bot processing. Without this, bot jams.
+        if (room.Phase == GamePhase.Play)
+            await CheckAndAutoPlay(room);
     }
 
     // ── _checkAndAutoPlay — iterative loop to avoid stack overflow ──────────

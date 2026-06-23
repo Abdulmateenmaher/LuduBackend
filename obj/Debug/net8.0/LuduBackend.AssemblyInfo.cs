@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LuduBackend")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e2728d3b350d86db216b633d4ded5f408b2a01e1")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e80ace37f735bd5d3239caed68e9c85ce1967c58")]
 [assembly: System.Reflection.AssemblyProductAttribute("LuduBackend")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LuduBackend")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
