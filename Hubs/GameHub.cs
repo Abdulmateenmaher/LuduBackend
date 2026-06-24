@@ -105,6 +105,11 @@ public class GameHub(RoomService rooms) : Hub
         var room = rooms.GetRoomByConn(Context.ConnectionId);
         if (room == null || room.Phase != GamePhase.Play) return;
         if (room.Players[room.TurnSlot].IsAI) return; // AI doesn't need it
+        if (room.Players[room.TurnSlot].ConnectionId != Context.ConnectionId) return;
+
+        // RACE GUARD: If the player already has dice, they already rolled
+        // (or got a bonus from their own roll). Let them make their own moves.
+        if (room.DicePool.Count > 0) return;
 
         // Notify other players
         await Clients.Group(room.RoomId).SendAsync("GameState",
@@ -205,7 +210,7 @@ public class GameHub(RoomService rooms) : Hub
                 {
                     await Task.Delay(490);
                     if (room.Phase != GamePhase.Play || room.TurnSlot != actId) return;
-                    var (r, extra2, pp2, toast2) = rooms.RollDice("__ai__");
+                    var (r, extra2, pp2, toast2) = rooms.RollDice(room);
                     if (r == null) return;
                     await Clients.Group(room.RoomId).SendAsync("GameState", new GameStateMsg(room, toast2));
                     if (room.Phase == GamePhase.End) return;

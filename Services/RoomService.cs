@@ -147,12 +147,12 @@ public class RoomService
     }
 
     // ── RollDice — exact port ──────────────────────────────────────────────
+    // Overload that takes a room directly — used by CheckAndAutoPlay for AI rolls.
+    // Avoids the FindRoom("__ai__") global search which is fragile in multi-game.
 
-    public (GameRoom? room, bool extra, bool prioritizePrison, string? toast) RollDice(string connId)
+    public (GameRoom? room, bool extra, bool prioritizePrison, string? toast) RollDice(GameRoom room)
     {
-        var room = FindRoom(connId);
-        if (room==null||room.Phase!=GamePhase.Play||!room.CanRoll) return (null,false,false,null);
-        if (!ValidateTurn(room, connId)) return (null,false,false,null);
+        if (room.Phase != GamePhase.Play || !room.CanRoll) return (null,false,false,null);
 
         room.CanRoll = false;
         int actId = room.TurnSlot;
@@ -160,7 +160,7 @@ public class RoomService
 
         int d1 = _rng.Next(1,7), d2 = _rng.Next(1,7);
 
-        // FIX 2: Team game-over check: helper wins if partner finished
+        // Team game-over check: helper wins if partner finished
         if (room.Settings.TeamPlay && actPlayer.Finished && actPlayer.IsHelper)
         {
             int partnerId = actPlayer.PartnerId;
@@ -173,11 +173,10 @@ public class RoomService
             }
         }
 
-        // FIX 1: Dice show on all-home roll
+        // Dice show on all-home roll
         bool allHome = actPlayer.Pieces.All(pc => pc.State == PieceState.Home);
         if (allHome && !actPlayer.Finished)
         {
-            // Set dice pool to show the values, then check win on next call
             room.DicePool = [d1, d2];
             bool winningRoll = d1==6||d2==6||(d1==1&&d2==1)||(d1==6&&d2==6);
             if (winningRoll)
@@ -193,7 +192,7 @@ public class RoomService
         bool prioritizePrison = d1==6||d2==6||(d1==1&&d2==1);
         bool isQualifyingRoll = d1==6||d2==6||(d1==1&&d2==1)||(d1==6&&d2==6);
 
-        // ── Finished but not yet helper ──
+        // Finished but not yet helper
         if (actPlayer.Finished && !actPlayer.IsHelper)
         {
             if (isQualifyingRoll)
@@ -237,6 +236,15 @@ public class RoomService
         room.SelectedDieIndex = AutoSelectDie(room);
 
         return (room, extra, prioritizePrison, null);
+    }
+
+    // Connection-based overload — delegates to room-based overload after lookup+validation.
+    public (GameRoom? room, bool extra, bool prioritizePrison, string? toast) RollDice(string connId)
+    {
+        var room = FindRoom(connId);
+        if (room==null) return (null,false,false,null);
+        if (!ValidateTurn(room, connId)) return (null,false,false,null);
+        return RollDice(room);
     }
 
     // ── MovePiece — exact port ─────────────────────────────────────────────
