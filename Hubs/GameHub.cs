@@ -453,20 +453,20 @@ public class GameHub(RoomService rooms) : Hub
         }
 
         // HUGE penalty for passing over second stop without landing
-        if (willPassSecondStop) score -= 300000;
+        if (willPassSecondStop) score -= 800000;
 
         // Forming the 2-piece block on second stop = TOP priority
-        if (formingChokePoint) score += 500000;
+        if (formingChokePoint) score += 1000000;
 
         // Landing ON second stop (even without forming block yet)
         if (isTargetSecondSafe && targetState == PieceState.Board) {
-            if (sameColorAtTarget == 0) score += 200000;
+            if (sameColorAtTarget == 0) score += 400000;
         }
 
         // Breaking second stop block = heavily penalized
-        if (breakingChokePoint) score -= 250000;
+        if (breakingChokePoint) score -= 500000;
         if (isCurrentSecondSafe)
-            score += piecesAtSecondStop >= 2 ? -80000 : -300000;
+            score += piecesAtSecondStop >= 2 ? -200000 : -500000;
 
         // 🔥 ENHANCED: Prevent moving from second stop into home stretch/home
         if (movingFromSecondStopIntoHome)
@@ -506,21 +506,47 @@ public class GameHub(RoomService rooms) : Hub
             if (outDiff > 0) score += 50000 * (outDiff + 1);
         }
         
-        // Yard -> Board (second step: release after escape)
+        // Yard -> Board: high priority, but defers to prisoners when they exist
         if (currentState == PieceState.Yard && targetState == PieceState.Board)
         {
-            if (prisoners > 0)
+            int piecesInYard = players[myId].Pieces.Count(p => p.State == PieceState.Yard);
+            // Task 7a: pieces count > 1 in yard -> bring out pieces, else release prisoners
+            if (prisoners > 0 && piecesInYard <= 1)
             {
-                score -= 100000 * prisoners; // STRONG defer: don't release yard while prisoners exist
+                score -= 300000;
             }
             else
             {
-                score += 200000; // High priority for yard release
-                if (hasSixInPool) score += 100000;
-                int piecesOnBoard = players[myId].Pieces.Count(p => p.State==PieceState.Board || p.State==PieceState.HomeStretch);
-                if (piecesOnBoard <= 1) score += 80000;
-                int outDiff = opponentPiecesOut - piecesOut;
-                if (outDiff > 0) score += 30000 * (outDiff + 1);
+                // Task 7b & 7c logic
+                bool enemyNearHome = false;
+                int myHomeStop = BoardConstants.MyStops[myId][0];
+                foreach (var p in players)
+                {
+                    if (p.Id == myId || p.PartnerId == myId || !p.IsActive) continue;
+                    foreach (var pc in p.Pieces)
+                    {
+                        if (pc.State == PieceState.Board)
+                        {
+                            int distToHome = (myHomeStop - pc.Pos + 52) % 52;
+                            if (distToHome >= 0 && distToHome <= 4) enemyNearHome = true;
+                        }
+                    }
+                }
+
+                if (enemyNearHome && piecesInYard >= 1 && hasSixInPool && currentPool.Count(d => d == 6) == 1)
+                {
+                    // case 1: only one 6 and danger -> prioritize prisoners over yard
+                    score -= 200000;
+                }
+                else if (!enemyNearHome && piecesInYard >= 1 && hasSixInPool)
+                {
+                    // case 2 & 3: no danger or more than 1 six
+                    score += 300000;
+                    if (currentPool.Count(d => d == 6) > 1) score += 100000;
+                }
+
+                // Task 6 Ambush/Opportunity from yard
+                if (isHit) score += 400000;
             }
         }
 
@@ -590,6 +616,26 @@ public class GameHub(RoomService rooms) : Hub
 
         if (targetState==PieceState.Board && safeZones.Contains(targetPos) && !formingBlock) score+=3000;
         if (targetIsChasing && !targetInDanger) score+=4000;
+
+        // Task 6: Ambush - reward staying in hit range of an opponent if on a safe zone
+        if (currentState == PieceState.Board && IsOwnColoredSafe(myId, currentPos))
+        {
+            bool isAmbushing = false;
+            foreach (var p in players)
+            {
+                if (p.Id == myId || p.PartnerId == myId || !p.IsActive) continue;
+                foreach (var pc in p.Pieces)
+                {
+                    if (pc.State == PieceState.Board)
+                    {
+                        int d = (pc.Pos - currentPos + 52) % 52;
+                        if (d > 0 && d <= 6) isAmbushing = true;
+                    }
+                }
+            }
+            if (isAmbushing && !isHit && !isTargetSecondSafe && !isTargetFirstSafe)
+                score -= 15000;
+        }
 
         if (targetState == PieceState.Board)
         {

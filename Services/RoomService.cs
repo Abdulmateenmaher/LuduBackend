@@ -89,6 +89,15 @@ public class RoomService
         if (room.Settings.PlayerCount < 4) room.Settings.TeamPlay = false;
         room.Phase=GamePhase.Play; room.CanRoll=true;
         room.MatchFirstSixRolled=false; room.DicePool=[]; room.ConsecutiveExtra=0;
+
+        // Find first valid player
+        while (!room.Players[room.TurnSlot].IsActive ||
+               (room.Players[room.TurnSlot].Finished && !room.Settings.TeamPlay) ||
+               !GameLogic.HasAnyPossibleMove(room.Players[room.TurnSlot], room.Players, room.Settings))
+        {
+            room.TurnSlot = (room.TurnSlot + 1) % 4;
+        }
+
         return room;
     }
 
@@ -98,7 +107,13 @@ public class RoomService
         _connRooms.Remove(connId);
         if (!_rooms.TryGetValue(roomId, out var room)) return;
         foreach (var p in room.Players.Where(p=>p.ConnectionId==connId))
-        { p.ConnectionId=null; if(p.IsActive&&!p.Finished) p.IsAI=true; }
+        {
+            p.ConnectionId=null;
+            if(p.IsActive&&!p.Finished) {
+                p.IsAI=true;
+                p.Name = $"Bot {BoardConstants.ColorNames[p.Id]}";
+            }
+        }
         room.JoinRequests.Remove(connId);
         if (room.HostConnectionId==connId&&room.Phase==GamePhase.Waiting) _rooms.Remove(roomId);
     }
@@ -356,7 +371,8 @@ public class RoomService
             }
         }
         while (!room.Players[room.TurnSlot].IsActive ||
-               (room.Players[room.TurnSlot].Finished && !room.Settings.TeamPlay));
+               (room.Players[room.TurnSlot].Finished && !room.Settings.TeamPlay) ||
+               !GameLogic.HasAnyPossibleMove(room.Players[room.TurnSlot], room.Players, room.Settings));
 
         room.DicePool = [];
         room.ConsecutiveExtra = 0;

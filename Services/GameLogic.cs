@@ -112,6 +112,35 @@ public static class GameLogic
         return null;
     }
 
+    public static bool HasAnyPossibleMove(Player player, List<Player> allPlayers, GameSettings settings)
+    {
+        if (player.Finished && !player.IsHelper && settings.TeamPlay)
+        {
+            return !allPlayers[player.PartnerId].Finished;
+        }
+
+        int ctrlId = (player.Finished && player.IsHelper && settings.TeamPlay)
+            ? player.PartnerId
+            : player.Id;
+        var pCtrl = allPlayers[ctrlId];
+
+        if (pCtrl.Finished) return false;
+
+        bool allHome = pCtrl.Pieces.All(pc => pc.State == PieceState.Home);
+        if (allHome) return player.Id == ctrlId;
+
+        for (int d = 1; d <= 6; d++)
+        {
+            foreach (var pc in pCtrl.Pieces)
+            {
+                if (pc.State == PieceState.Home || pc.HasKilledThisTurn) continue;
+                var dest = CalculateDestination(pCtrl, pc, d, allPlayers, [d], 0, settings);
+                if (dest != null) return true;
+            }
+        }
+        return false;
+    }
+
     /// Exact port of calculateDestination
     public static MoveDestination? CalculateDestination(Player player, Piece piece, int moveVal, List<Player> players,
         List<int> pool, int dieIndex, GameSettings settings)
