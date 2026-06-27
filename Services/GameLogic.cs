@@ -72,7 +72,10 @@ public static class GameLogic
 
         if (piece.State == PieceState.HomeStretch)
         {
-            int remaining = 5 - piece.Pos;
+            int piecesHome = player.Pieces.Count(p => p.State == PieceState.Home);
+            bool isLastPiece = piecesHome >= 3;
+            int homeStretchSize = (settings.FinalSixFinish && isLastPiece) ? 6 : 5;
+            int remaining = homeStretchSize - piece.Pos;
             if (moveVal == remaining) return new() { Valid=true, TargetState=PieceState.Home, TargetPos=999 };
             if (moveVal < remaining) return new() { Valid=true, TargetState=PieceState.HomeStretch, TargetPos=piece.Pos+moveVal };
             return null;
@@ -88,8 +91,11 @@ public static class GameLogic
                     bool canEnter = !settings.KillToEnter || player.HasKilled;
                     if (!canEnter) return null;
                     int remaining = moveVal - step;
-                    if (remaining == 5) return new() { Valid=true, TargetState=PieceState.Home, TargetPos=999 };
-                    if (remaining < 5) return new() { Valid=true, TargetState=PieceState.HomeStretch, TargetPos=remaining };
+                    int piecesHome = player.Pieces.Count(p => p.State == PieceState.Home);
+                    bool isLastPiece = piecesHome >= 3;
+                    int homeStretchSize = (settings.FinalSixFinish && isLastPiece) ? 6 : 5;
+                    if (remaining == homeStretchSize) return new() { Valid=true, TargetState=PieceState.Home, TargetPos=999 };
+                    if (remaining < homeStretchSize) return new() { Valid=true, TargetState=PieceState.HomeStretch, TargetPos=remaining };
                     return null;
                 }
                 curr = (curr + 1) % 52;

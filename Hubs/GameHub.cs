@@ -446,14 +446,24 @@ public class GameHub(RoomService rooms) : Hub
             else score = (int)(score * 0.5);
         }
 
+        // TASK 3: Extend behindSecondStop to ANY distance behind (not just 6 cells)
+        // TASK 3: Also detect passing over second stop into homeStretch/home
+        bool isBehindSecondStopAnyDist = distToSecondStop > 0 && !isPastSecondStop;
+        bool willPassSecondStopExtended = isBehindSecondStopAnyDist && distToSecondStop < move.DieValue && 
+            (targetState == PieceState.Board || targetState == PieceState.HomeStretch || targetState == PieceState.Home);
+
         // Pieces behind second stop that CAN land on it = high priority
-        if (isBehindSecondStop && !willPassSecondStop) {
+        // TASK 3: Use extended behindSecondStop check (any distance)
+        if (isBehindSecondStopAnyDist && !willPassSecondStopExtended) {
             if (distToSecondStop == move.DieValue && targetState == PieceState.Board && !isHit)
                 score += 250000;
         }
 
-        // HUGE penalty for passing over second stop without landing
-        if (willPassSecondStop) score -= 5000000;
+        // TASK 3: HUGE penalty for passing over second stop (any distance) or entering home from behind
+        if (willPassSecondStopExtended) {
+            score -= 5000000;
+            if (piecesNeedingHelp > 0) score -= 1000000;
+        }
 
         // Forming the 2-piece block on second stop = TOP priority
         if (formingChokePoint) score += 2000000;
@@ -463,17 +473,20 @@ public class GameHub(RoomService rooms) : Hub
             if (sameColorAtTarget == 0) score += 800000;
         }
 
-        // Breaking second stop block = effectively disabled
-        if (breakingChokePoint) score -= 2000000;
+        // Breaking second stop block = heavily penalized
+        int breakMultiplier = piecesNeedingHelp > 2 ? 2 : (piecesNeedingHelp > 0 ? 3 : 2);
+        if (breakingChokePoint) score -= 4000000 * breakMultiplier;
         if (isCurrentSecondSafe)
         {
             if (targetState != PieceState.Home)
             {
-                score += piecesAtSecondStop >= 2 ? -1000000 : -2000000;
+                score += piecesAtSecondStop >= 2 ? (-3000000 - (piecesNeedingHelp > 0 ? 1000000 : 0)) : -6000000;
+                if (piecesNeedingHelp > 0 && !breakingChokePoint) score -= 2000000;
             }
             else
             {
-                if (piecesNeedingHelp > 0) score -= 500000;
+                if (piecesNeedingHelp > 3) score -= 500000;
+                else if (piecesNeedingHelp > 0) score -= 1500000;
             }
         }
 
@@ -499,81 +512,101 @@ public class GameHub(RoomService rooms) : Hub
             }
         }
 
-        // ========== FIX 2: PRISONER RELEASE = CRITICAL WHEN 6 IN POOL ==========
+        // ========== TASK 1: 6 IN POOL = PRISONER > YARD, BUT YARD STILL HIGH ==========
         bool hasSixInPool = currentPool.Contains(6);
-        
-        // CRITICAL FIX: Prisoner -> Yard (first step: escape prison with 6)
+        int piecesInYard = players[myId].Pieces.Count(p => p.State == PieceState.Yard);
+        int piecesOnBoard = players[myId].Pieces.Count(p => p.State==PieceState.Board || p.State==PieceState.HomeStretch);
+
+        // TASK 1: When bot has 1-2 yard, 1-2 board, 1-2 prisoners → prioritize yard over prison
+        bool mixedSituation = (piecesInYard >= 1 && piecesInYard <= 2) && 
+                              (piecesOnBoard >= 1 && piecesOnBoard <= 2) && 
+                              (prisoners >= 1 && prisoners <= 2);
+
+        // Prisoner -> Yard: high priority, but defers to YARD if mixed situation
         if (currentState == PieceState.Prison && targetState == PieceState.Yard)
         {
-            score += 1000000; // INCREASED
-            if (hasSixInPool) score += 500000;
-
-            int piecesOnBoard = players[myId].Pieces.Count(p => p.State==PieceState.Board || p.State==PieceState.HomeStretch);
-            int piecesInYard = players[myId].Pieces.Count(p => p.State == PieceState.Yard);
-
-            // Rule A: only pieces at yard, 0 on board, has prisoners -> Prioritize Prisoners
-            if (piecesOnBoard == 0 && piecesInYard == 1 && prisoners > 0)
+            // TASK 1: In mixed situation, DON'T release prisoners - bring yard pieces out instead
+            if (mixedSituation)
             {
-                score += 800000;
+                score -= 800000; // Strongly discourage prisoner release
             }
+            else
+            {
+                score += 1000000;
+                if (hasSixInPool) score += 500000;
 
-            if (piecesOnBoard <= 2) score += 200000;
-            int outDiff = opponentPiecesOut - piecesOut;
-            if (outDiff > 0) score += 50000 * (outDiff + 1);
+                // Rule A: only pieces at yard, 0 on board, has prisoners -> Prioritize Prisoners
+                if (piecesOnBoard == 0 && piecesInYard == 1 && prisoners > 0)
+                {
+                    score += 800000;
+                }
+
+                if (piecesOnBoard <= 2) score += 200000;
+                int outDiff = opponentPiecesOut - piecesOut;
+                if (outDiff > 0) score += 50000 * (outDiff + 1);
+            }
         }
         
         // Yard -> Board: high priority, but defers to prisoners based on specific rules
         if (currentState == PieceState.Yard && targetState == PieceState.Board)
         {
-            int piecesOnBoard = players[myId].Pieces.Count(p => p.State==PieceState.Board || p.State==PieceState.HomeStretch);
-            int piecesInYard = players[myId].Pieces.Count(p => p.State == PieceState.Yard);
-            bool shouldPrioritizeYard = false;
-
-            // Rule C: 2+ yard pieces, 0 on board -> Yard Release
-            if (piecesOnBoard == 0 && piecesInYard >= 2)
+            // TASK 1: In mixed situation, strongly boost yard release
+            if (mixedSituation)
             {
-                shouldPrioritizeYard = true;
-            }
-            // Rule B: 1-2 board pieces, 1 yard piece -> Yard Release
-            else if ((piecesOnBoard == 1 || piecesOnBoard == 2) && piecesInYard == 1)
-            {
-                shouldPrioritizeYard = true;
-            }
-
-            if (prisoners > 0 && !shouldPrioritizeYard)
-            {
-                score -= 500000; // STRONG defer to prisoners
+                score += 1500000; // Very high priority to bring yard pieces out
+                if (hasSixInPool) score += 500000;
+                if (isHit) score += 600000;
             }
             else
             {
-                score += 500000;
-                if (hasSixInPool) score += 200000;
+                bool shouldPrioritizeYard = false;
 
-                if (shouldPrioritizeYard) score += 400000;
-
-                // Task 7b & 7c logic refinement
-                bool enemyNearHome = false;
-                int myHomeStop = BoardConstants.MyStops[myId][0];
-                foreach (var p in players)
+                // Rule C: 2+ yard pieces, 0 on board -> Yard Release
+                if (piecesOnBoard == 0 && piecesInYard >= 2)
                 {
-                    if (p.Id == myId || p.PartnerId == myId || !p.IsActive) continue;
-                    foreach (var pc in p.Pieces)
+                    shouldPrioritizeYard = true;
+                }
+                // Rule B: 1-2 board pieces, 1 yard piece -> Yard Release
+                else if ((piecesOnBoard == 1 || piecesOnBoard == 2) && piecesInYard == 1)
+                {
+                    shouldPrioritizeYard = true;
+                }
+
+                if (prisoners > 0 && !shouldPrioritizeYard)
+                {
+                    score -= 500000; // STRONG defer to prisoners
+                }
+                else
+                {
+                    score += 500000;
+                    if (hasSixInPool) score += 200000;
+
+                    if (shouldPrioritizeYard) score += 400000;
+
+                    // Task 7b & 7c logic refinement
+                    bool enemyNearHome = false;
+                    int myHomeStop = BoardConstants.MyStops[myId][0];
+                    foreach (var p in players)
                     {
-                        if (pc.State == PieceState.Board)
+                        if (p.Id == myId || p.PartnerId == myId || !p.IsActive) continue;
+                        foreach (var pc in p.Pieces)
                         {
-                            int distToHome = (myHomeStop - pc.Pos + 52) % 52;
-                            if (distToHome >= 0 && distToHome <= 4) enemyNearHome = true;
+                            if (pc.State == PieceState.Board)
+                            {
+                                int distToHome = (myHomeStop - pc.Pos + 52) % 52;
+                                if (distToHome >= 0 && distToHome <= 4) enemyNearHome = true;
+                            }
                         }
                     }
-                }
 
-                if (enemyNearHome && piecesInYard == 1 && hasSixInPool && currentPool.Count(d => d == 6) == 1)
-                {
-                    if (!shouldPrioritizeYard) score -= 400000;
-                }
+                    if (enemyNearHome && piecesInYard == 1 && hasSixInPool && currentPool.Count(d => d == 6) == 1)
+                    {
+                        if (!shouldPrioritizeYard) score -= 400000;
+                    }
 
-                // Task 6 Ambush/Opportunity from yard
-                if (isHit) score += 600000;
+                    // Task 6 Ambush/Opportunity from yard
+                    if (isHit) score += 600000;
+                }
             }
         }
 
@@ -581,12 +614,10 @@ public class GameHub(RoomService rooms) : Hub
         bool isFinishing = targetState==PieceState.Home && otherPiecesHome==3;
         if (isFinishing) { score+=150000; if(remainingDice.Contains(6)) score+=20000; }
 
-        if (formingBlock && isTargetFirstSafe) score += 40000;
-
+        // TASK 2: 2nd priority - hitting opponent (boosted)
         if (isHit)
         {
-            // 🔥 FIX 3: Scale score by number of opponents hit (multi-hit is stronger)
-            score += 60000 + (hitCount * 30000);
+            score += 350000 + (hitCount * 120000);
             if (remainingDice.Count > 0)
             {
                 int remSum = remainingDice.Sum();
@@ -602,6 +633,9 @@ public class GameHub(RoomService rooms) : Hub
                 }
             }
         }
+
+        // TASK 2: 3rd priority - home border block (reduced)
+        if (formingBlock && isTargetFirstSafe) score += 50000;
 
         // 🔥 FIX 3: Bonus for forming/joining a block on opponent's colored squares
         if (joiningBlock && !IsOwnColoredSafe(myId, targetPos) && safeZones.Contains(targetPos))
@@ -685,17 +719,24 @@ public class GameHub(RoomService rooms) : Hub
         {
             if (piecesAtFirstStop >= 3)
             {
-                score += 100000; // Increased bonus for moving 3rd piece
+                score -= 500000; // 3+ pieces at first stop - move one out
+            }
+            else if (piecesAtFirstStop == 2)
+            {
+                score -= 500000; // Breaking 2-piece block = moderate penalty (less than second stop)
             }
             else
             {
-                score -= 1000000; // Strict maintain block
+                score -= 500000; // Relaxed penalty for single piece
             }
         }
         if (targetInDanger && !isHit && !formingBlock) score-=4000 * (threatCountNearTarget + 1);
         if (leavingVulnerable) score-=5000;
         if (currentState==PieceState.Board && IsOwnColoredSafe(myId,currentPos) && sameColorAtCurrent>0
             && !isHit && !breakingChokePoint && !isCurrentFirstSafe && !isCurrentSecondSafe) score-=2000;
+
+        if (isHit && targetState == PieceState.Board && isCurrentFirstSafe)
+            score += 200000;
 
         return score;
     }

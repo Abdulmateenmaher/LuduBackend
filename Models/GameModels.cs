@@ -37,6 +37,10 @@ public class GameSettings
     public bool PrisonRule { get; set; } = true;
     public bool TeamPlay { get; set; } = true;
     public int PlayerCount { get; set; } = 4;
+    public bool FinalSixFinish { get; set; } = true;
+    public int DiceCount { get; set; } = 2;
+    public bool SkipOnDoubleThree { get; set; } = false;
+    public bool BlostOnDoubleFour { get; set; } = false;
 }
 
 public class GameRoom
@@ -58,6 +62,8 @@ public class GameRoom
     public int FilledSlots => Players.Count(p => p.IsActive && p.ConnectionId != null);
     public int MaxSlots => Settings.PlayerCount;
     public int? SelectedDieIndex { get; set; }
+    public List<int> LastDiceResults { get; set; } = [];
+    public bool IsBlostTurn { get; set; }
 }
 
 public enum GamePhase { Waiting, Play, End }

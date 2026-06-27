@@ -226,19 +226,39 @@ public class RoomService
         bool isSixOrDoubleOne = d1==6||d2==6||isDoubleOne;
         bool isGlobalFirstSix = !room.MatchFirstSixRolled && isSixOrDoubleOne;
 
-        if (isGlobalFirstSix)
+        if (room.Settings.DiceCount == 1)
+        {
+            bool isBlost = room.Settings.BlostOnDoubleFour && d1 == 4;
+            if (isBlost && actPlayer.HasKilled && actPlayer.Pieces.Any(p => p.State == PieceState.Board))
+            {
+                newPool.AddRange([6,6,6]); extra = true;
+            }
+            else if (d1 == 6) { newPool.Add(6); extra = true; }
+            else { newPool.Add(d1); }
+        }
+        else if (isGlobalFirstSix)
         {
             room.MatchFirstSixRolled = true;
             bool hasFour = (d1==6&&d2==4)||(d2==6&&d1==4);
+            bool isBlost = room.Settings.BlostOnDoubleFour && d1 == 4 && d2 == 4;
             newPool.Clear();
-            if (hasFour)       { newPool.AddRange([6,6,6,6,4]); }
+            if (isBlost && actPlayer.HasKilled && actPlayer.Pieces.Any(p => p.State == PieceState.Board))
+            {
+                newPool.AddRange([6,6,6,6]); extra = true;
+            }
+            else if (hasFour)       { newPool.AddRange([6,6,6,6,4]); }
             else if (isDoubleSix) { newPool.AddRange([6,6,6]); extra=true; }
             else if (isDoubleOne) { newPool.AddRange([6,6,6]); extra=true; }
             else                  { newPool.AddRange([d1,d2,6]); }
         }
         else
         {
-            if (room.Settings.DoubleSixBonus && (isDoubleSix||isDoubleOne))
+            bool isBlost = room.Settings.BlostOnDoubleFour && d1 == 4 && d2 == 4;
+            if (isBlost && actPlayer.HasKilled && actPlayer.Pieces.Any(p => p.State == PieceState.Board))
+            {
+                newPool.AddRange([6,6,6,6]); extra = room.ConsecutiveExtra < 3;
+            }
+            else if (room.Settings.DoubleSixBonus && (isDoubleSix||isDoubleOne))
             { extra = room.ConsecutiveExtra<3; newPool.AddRange([6,6]); }
             else newPool.AddRange([d1,d2]);
             if (d1==d2 && (d1==6||d1==1)) extra = true;
@@ -362,7 +382,7 @@ public class RoomService
         if (room.Settings.BlostOnDoubleFour && pCtrl.HasKilled &&
             pCtrl.Pieces.Any(p => p.State == PieceState.Board))
         {
-             safeZones = GameLogic.EffectiveSafeZones(room.Settings);
+            var safeZones = GameLogic.EffectiveSafeZones(room.Settings);
             foreach (var op in room.Players)
             {
                 if (op.Id == pCtrl.Id || op.Id == pCtrl.PartnerId || !op.IsActive) continue;
