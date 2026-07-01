@@ -248,6 +248,21 @@ public class RoomService
         room.DicePool = newPool;
         room.ConsecutiveExtra = extra ? room.ConsecutiveExtra+1 : 0;
         room.CanRoll = extra;
+
+        // FIX: If extra turn was granted but player has no movable piece with current dice pool, revoke it
+        if (room.CanRoll)
+        {
+            int ctrlId = GetCtrlId(room);
+            var pCtrl = room.Players[ctrlId];
+            var allMoves = GameLogic.GetAllValidMoves(pCtrl, room.DicePool, room.Players, room.Settings);
+            if (allMoves.Count == 0)
+            {
+                room.CanRoll = false;
+                extra = false;
+                room.ConsecutiveExtra = 0;
+            }
+        }
+
         room.SelectedDieIndex = AutoSelectDie(room);
 
         return (room, extra, prioritizePrison, null);
